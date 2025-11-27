@@ -15,8 +15,11 @@ RUN pip install --no-cache-dir \
     peft \
     sentencepiece
 
-# 安装 diffusers 稳定版
-RUN pip install --no-cache-dir diffusers==0.31.0
+# 安装最新 diffusers（从 GitHub）
+RUN pip install --no-cache-dir git+https://github.com/huggingface/diffusers.git
+
+# 禁用 torchao（避免 torch.xpu 错误）
+ENV DIFFUSERS_DISABLE_TORCHAO=1
 
 # 复制代码
 COPY handler.py /app/handler.py

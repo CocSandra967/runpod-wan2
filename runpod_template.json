@@ -1,0 +1,18 @@
+{
+  "name": "Wan2.2 I2V Video Generator",
+  "description": "Generate videos from images using Wan2.2 14B model",
+  "containerDiskInGb": 50,
+  "volumeInGb": 0,
+  "gpuCount": 1,
+  "gpuTypeId": "NVIDIA A10G",
+  "minVcpuCount": 4,
+  "minMemoryInGb": 32,
+  "env": [
+    {
+      "key": "HF_TOKEN",
+      "value": "YOUR_HF_TOKEN_HERE"
+    }
+  ],
+  "ports": "8000/http",
+  "startCommand": "python -u handler.py"
+}

@@ -1,5 +1,6 @@
-# RunPod Serverless Dockerfile for Wan2.2 I2V
-FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+# RunPod Serverless Dockerfile for Wan2.1 I2V
+# 使用 PyTorch 2.5 支持 enable_gqa
+FROM runpod/pytorch:2.5.1-py3.11-cuda12.4.1-devel-ubuntu22.04
 
 WORKDIR /app
 

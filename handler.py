@@ -13,9 +13,9 @@ from PIL import Image
 from io import BytesIO
 
 # =========================================================
-# 模型配置
+# 模型配置 - 使用 1.3B 小模型，更快更省空间
 # =========================================================
-MODEL_ID = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+MODEL_ID = "Wan-AI/Wan2.1-I2V-1.3B-Diffusers"
 MAX_DIM = 832
 MIN_DIM = 480
 SQUARE_DIM = 640

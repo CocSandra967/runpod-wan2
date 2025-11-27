@@ -16,14 +16,14 @@ from io import BytesIO
 # 模型配置 - 使用 14B 模型，高质量
 # =========================================================
 MODEL_ID = "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
-# 降低分辨率和帧数以适应 24GB 显存
-MAX_DIM = 576       # 原 832，降低到 576
-MIN_DIM = 320       # 原 480，降低到 320
-SQUARE_DIM = 480    # 原 640，降低到 480
+# 进一步降低分辨率和帧数，配合 CPU Offload 适应 48GB 显存
+MAX_DIM = 480       # 降低到 480
+MIN_DIM = 272       # 降低到 272
+SQUARE_DIM = 384    # 降低到 384
 MULTIPLE_OF = 16
 FIXED_FPS = 16
 MIN_FRAMES_MODEL = 8
-MAX_FRAMES_MODEL = 49   # 原 81，降低到 49（约3秒）
+MAX_FRAMES_MODEL = 33   # 约2秒
 
 # 全局模型实例（冷启动时加载一次）
 pipe = None
@@ -37,7 +37,7 @@ def load_model():
     
     import gc
     
-    print("正在加载模型到 GPU...")
+    print("正在加载模型（启用 CPU Offload）...")
     print(f"CUDA 可用: {torch.cuda.is_available()}")
     print(f"GPU 设备: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None'}")
     
@@ -45,21 +45,24 @@ def load_model():
     
     HF_TOKEN = os.environ.get("HF_TOKEN")
     
-    # 直接加载到 GPU，使用 float16 节省显存
+    # 加载模型，使用 float16 节省显存
     pipe = WanImageToVideoPipeline.from_pretrained(
         MODEL_ID,
-        torch_dtype=torch.float16,  # 改用 float16 节省显存
+        torch_dtype=torch.float16,
         token=HF_TOKEN,
-    ).to("cuda")
+    )
+    
+    # 启用 CPU Offload - 把部分模型放 CPU，节省 GPU 显存
+    pipe.enable_model_cpu_offload()
     
     # 启用内存优化
     pipe.enable_attention_slicing()
     
-    # 清理 CPU 内存
+    # 清理内存
     gc.collect()
     torch.cuda.empty_cache()
     
-    print(f"模型加载完成! GPU 显存使用: {torch.cuda.memory_allocated()/1024**3:.2f} GB")
+    print("模型加载完成（CPU Offload 已启用）!")
     return pipe
 
 

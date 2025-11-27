@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir \
     pillow \
     requests \
     numpy \
-    torchao
+    peft
 
 # 安装最新 diffusers（从 GitHub）
 RUN pip install --no-cache-dir git+https://github.com/huggingface/diffusers.git

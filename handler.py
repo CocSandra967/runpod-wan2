@@ -107,7 +107,7 @@ def handler(job):
     duration = job_input.get("duration", 2.5)  # 降低默认时长到 2.5 秒
     negative_prompt = job_input.get("negative_prompt", 
         "low quality, worst quality, motion artifacts, unstable motion, jitter, blurry details, ugly background")
-    steps = job_input.get("steps", 6)
+    steps = job_input.get("steps", 4)  # 4步更快
     guidance_scale = job_input.get("guidance_scale", 1.0)
     seed = job_input.get("seed")
     

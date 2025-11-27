@@ -1,8 +1,10 @@
 # RunPod Serverless Dockerfile for Wan2.1 I2V
-# 使用 PyTorch 2.5 支持 enable_gqa
-FROM runpod/pytorch:2.5.1-py3.11-cuda12.4.1-devel-ubuntu22.04
+FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
 
 WORKDIR /app
+
+# 升级 PyTorch 到 2.5 支持 enable_gqa
+RUN pip install --no-cache-dir --upgrade torch==2.5.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 
 # 安装依赖
 RUN pip install --no-cache-dir \

@@ -17,7 +17,8 @@ RUN pip install --no-cache-dir \
     numpy \
     peft \
     sentencepiece \
-    ftfy
+    ftfy \
+    opencv-python-headless
 
 # 安装最新 diffusers（从 GitHub）
 RUN pip install --no-cache-dir git+https://github.com/huggingface/diffusers.git

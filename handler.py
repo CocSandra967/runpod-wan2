@@ -16,13 +16,14 @@ from io import BytesIO
 # 模型配置 - 使用 14B 模型，高质量
 # =========================================================
 MODEL_ID = "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
-MAX_DIM = 832
-MIN_DIM = 480
-SQUARE_DIM = 640
+# 降低分辨率和帧数以适应 24GB 显存
+MAX_DIM = 576       # 原 832，降低到 576
+MIN_DIM = 320       # 原 480，降低到 320
+SQUARE_DIM = 480    # 原 640，降低到 480
 MULTIPLE_OF = 16
 FIXED_FPS = 16
 MIN_FRAMES_MODEL = 8
-MAX_FRAMES_MODEL = 81
+MAX_FRAMES_MODEL = 49   # 原 81，降低到 49（约3秒）
 
 # 全局模型实例（冷启动时加载一次）
 pipe = None
@@ -88,7 +89,7 @@ def handler(job):
     # 解析参数
     prompt = job_input.get("prompt", "")
     image_url = job_input.get("image_url", "")
-    duration = job_input.get("duration", 3.5)
+    duration = job_input.get("duration", 2.5)  # 降低默认时长到 2.5 秒
     negative_prompt = job_input.get("negative_prompt", 
         "low quality, worst quality, motion artifacts, unstable motion, jitter, blurry details, ugly background")
     steps = job_input.get("steps", 6)

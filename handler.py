@@ -35,53 +35,16 @@ def load_model():
         return pipe
     
     print("正在加载模型...")
-    from diffusers.pipelines.wan.pipeline_wan_i2v import WanImageToVideoPipeline
-    from diffusers.models.transformers.transformer_wan import WanTransformer3DModel
+    from diffusers import WanImageToVideoPipeline
     
     HF_TOKEN = os.environ.get("HF_TOKEN")
     
+    # 简化版：直接加载模型，不用 LoRA
     pipe = WanImageToVideoPipeline.from_pretrained(
         MODEL_ID,
-        transformer=WanTransformer3DModel.from_pretrained(
-            MODEL_ID,
-            subfolder="transformer",
-            torch_dtype=torch.bfloat16,
-            device_map="cuda",
-            token=HF_TOKEN
-        ),
-        transformer_2=WanTransformer3DModel.from_pretrained(
-            MODEL_ID,
-            subfolder="transformer_2",
-            torch_dtype=torch.bfloat16,
-            device_map="cuda",
-            token=HF_TOKEN
-        ),
         torch_dtype=torch.bfloat16,
+        token=HF_TOKEN
     ).to("cuda")
-    
-    # 加载 LoRA
-    print("加载 LoRA...")
-    pipe.load_lora_weights(
-        "Kijai/WanVideo_comfy",
-        weight_name="Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank128_bf16.safetensors",
-        adapter_name="lightx2v"
-    )
-    pipe.load_lora_weights(
-        "Kijai/WanVideo_comfy",
-        weight_name="Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank128_bf16.safetensors",
-        adapter_name="lightx2v_2",
-        load_into_transformer_2=True
-    )
-    pipe.set_adapters(["lightx2v", "lightx2v_2"], adapter_weights=[1., 1.])
-    pipe.fuse_lora(adapter_names=["lightx2v"], lora_scale=3., components=["transformer"])
-    pipe.fuse_lora(adapter_names=["lightx2v_2"], lora_scale=1., components=["transformer_2"])
-    pipe.unload_lora_weights()
-    
-    # 跳过量化（torchao 兼容性问题）
-    # from torchao.quantization import quantize_, Float8DynamicActivationFloat8WeightConfig, Int8WeightOnlyConfig
-    # quantize_(pipe.text_encoder, Int8WeightOnlyConfig())
-    # quantize_(pipe.transformer, Float8DynamicActivationFloat8WeightConfig())
-    # quantize_(pipe.transformer_2, Float8DynamicActivationFloat8WeightConfig())
     
     print("模型加载完成!")
     return pipe
@@ -167,7 +130,6 @@ def handler(job):
             width=resized_image.width,
             num_frames=num_frames,
             guidance_scale=float(guidance_scale),
-            guidance_scale_2=float(guidance_scale),
             num_inference_steps=int(steps),
             generator=torch.Generator(device="cuda").manual_seed(seed),
         ).frames[0]

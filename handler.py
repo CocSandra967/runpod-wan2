@@ -77,14 +77,13 @@ def load_model():
     pipe.fuse_lora(adapter_names=["lightx2v_2"], lora_scale=1., components=["transformer_2"])
     pipe.unload_lora_weights()
     
-    # 量化优化
-    print("应用量化...")
-    from torchao.quantization import quantize_, Float8DynamicActivationFloat8WeightConfig, Int8WeightOnlyConfig
-    quantize_(pipe.text_encoder, Int8WeightOnlyConfig())
-    quantize_(pipe.transformer, Float8DynamicActivationFloat8WeightConfig())
-    quantize_(pipe.transformer_2, Float8DynamicActivationFloat8WeightConfig())
+    # 跳过量化（torchao 兼容性问题）
+    # from torchao.quantization import quantize_, Float8DynamicActivationFloat8WeightConfig, Int8WeightOnlyConfig
+    # quantize_(pipe.text_encoder, Int8WeightOnlyConfig())
+    # quantize_(pipe.transformer, Float8DynamicActivationFloat8WeightConfig())
+    # quantize_(pipe.transformer_2, Float8DynamicActivationFloat8WeightConfig())
     
-    print("模型加载完成！")
+    print("模型加载完成!")
     return pipe
 
 

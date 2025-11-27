@@ -1,5 +1,5 @@
 """
-RunPod Serverless Handler for Wan2.2 I2V Video Generation
+RunPod Serverless Handler for Wan2.1 I2V (based on HF Space wan2-1-fast)
 """
 import runpod
 import torch
@@ -13,77 +13,97 @@ from PIL import Image
 from io import BytesIO
 
 # =========================================================
-# 模型配置 - 使用 14B 模型，高质量
+# 模型配置 - 与 HF Space 一致
 # =========================================================
 MODEL_ID = "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
-# 进一步降低分辨率和帧数，配合 CPU Offload 适应 48GB 显存
-MAX_DIM = 480       # 降低到 480
-MIN_DIM = 272       # 降低到 272
-SQUARE_DIM = 384    # 降低到 384
-MULTIPLE_OF = 16
-FIXED_FPS = 16
+LORA_REPO_ID = "Kijai/WanVideo_comfy"
+LORA_FILENAME = "Wan21_CausVid_14B_T2V_lora_rank32.safetensors"
+
+# 分辨率配置（与 HF Space 一致）
+MOD_VALUE = 32
+NEW_FORMULA_MAX_AREA = 480.0 * 832.0
+FIXED_FPS = 24  # HF Space 用 24fps
 MIN_FRAMES_MODEL = 8
-MAX_FRAMES_MODEL = 33   # 约2秒
+MAX_FRAMES_MODEL = 81
 
 # 全局模型实例（冷启动时加载一次）
 pipe = None
 
 
 def load_model():
-    """加载模型（只在冷启动时执行一次）"""
+    """加载模型（与 HF Space 一致，包括 LoRA）"""
     global pipe
     if pipe is not None:
         return pipe
     
     import gc
+    from huggingface_hub import hf_hub_download
+    from diffusers import AutoencoderKLWan, WanImageToVideoPipeline, UniPCMultistepScheduler
+    from transformers import CLIPVisionModel
     
-    print("正在加载模型（启用 CPU Offload）...")
+    print("正在加载模型（与 HF Space 一致）...")
     print(f"CUDA 可用: {torch.cuda.is_available()}")
     print(f"GPU 设备: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None'}")
     
-    from diffusers import WanImageToVideoPipeline
-    
     HF_TOKEN = os.environ.get("HF_TOKEN")
     
-    # 加载模型，使用 float16 节省显存
+    # 加载 image_encoder 和 vae（与 HF Space 一致）
+    print("加载 image_encoder...")
+    image_encoder = CLIPVisionModel.from_pretrained(
+        MODEL_ID, subfolder="image_encoder", torch_dtype=torch.float32, token=HF_TOKEN
+    )
+    
+    print("加载 vae...")
+    vae = AutoencoderKLWan.from_pretrained(
+        MODEL_ID, subfolder="vae", torch_dtype=torch.float32, token=HF_TOKEN
+    )
+    
+    print("加载 pipeline...")
     pipe = WanImageToVideoPipeline.from_pretrained(
         MODEL_ID,
-        torch_dtype=torch.float16,
+        vae=vae,
+        image_encoder=image_encoder,
+        torch_dtype=torch.bfloat16,
         token=HF_TOKEN,
     )
     
-    # 启用 CPU Offload - 把部分模型放 CPU，节省 GPU 显存
-    pipe.enable_model_cpu_offload()
+    # 使用 UniPCMultistepScheduler（与 HF Space 一致）
+    pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config, flow_shift=8.0)
+    pipe.to("cuda")
     
-    # 启用内存优化
-    pipe.enable_attention_slicing()
+    # 加载 CausVid LoRA（4步快速生成）
+    print("加载 CausVid LoRA...")
+    causvid_path = hf_hub_download(repo_id=LORA_REPO_ID, filename=LORA_FILENAME, token=HF_TOKEN)
+    pipe.load_lora_weights(causvid_path, adapter_name="causvid_lora")
+    pipe.set_adapters(["causvid_lora"], adapter_weights=[0.95])
+    pipe.fuse_lora()
     
     # 清理内存
     gc.collect()
     torch.cuda.empty_cache()
     
-    print("模型加载完成（CPU Offload 已启用）!")
+    print("模型加载完成（含 CausVid LoRA）!")
     return pipe
 
 
-def resize_image(input_image):
-    """调整图片尺寸"""
-    width, height = input_image.size
-    if width == height:
-        return input_image.resize((SQUARE_DIM, SQUARE_DIM), Image.LANCZOS)
+def calculate_dimensions(pil_image):
+    """计算输出尺寸（与 HF Space 一致）"""
+    orig_w, orig_h = pil_image.size
+    if orig_w <= 0 or orig_h <= 0:
+        return 512, 896  # 默认值
     
-    aspect_ratio = width / height
-    if width > height:
-        target_w, target_h = MAX_DIM, int(round(MAX_DIM / aspect_ratio))
-    else:
-        target_h, target_w = MAX_DIM, int(round(MAX_DIM * aspect_ratio))
+    aspect_ratio = orig_h / orig_w
+    calc_h = round(np.sqrt(NEW_FORMULA_MAX_AREA * aspect_ratio))
+    calc_w = round(np.sqrt(NEW_FORMULA_MAX_AREA / aspect_ratio))
     
-    final_w = round(target_w / MULTIPLE_OF) * MULTIPLE_OF
-    final_h = round(target_h / MULTIPLE_OF) * MULTIPLE_OF
-    final_w = max(MIN_DIM, min(MAX_DIM, final_w))
-    final_h = max(MIN_DIM, min(MAX_DIM, final_h))
+    calc_h = max(MOD_VALUE, (calc_h // MOD_VALUE) * MOD_VALUE)
+    calc_w = max(MOD_VALUE, (calc_w // MOD_VALUE) * MOD_VALUE)
     
-    return input_image.resize((final_w, final_h), Image.LANCZOS)
+    # 限制范围
+    new_h = int(np.clip(calc_h, 128, 896))
+    new_w = int(np.clip(calc_w, 128, 896))
+    
+    return new_h, new_w
 
 
 def handler(job):
@@ -104,9 +124,9 @@ def handler(job):
     # 解析参数
     prompt = job_input.get("prompt", "")
     image_url = job_input.get("image_url", "")
-    duration = job_input.get("duration", 2.5)  # 降低默认时长到 2.5 秒
+    duration = job_input.get("duration", 2)  # 默认 2 秒
     negative_prompt = job_input.get("negative_prompt", 
-        "low quality, worst quality, motion artifacts, unstable motion, jitter, blurry details, ugly background")
+        "Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards, watermark, text, signature")
     steps = job_input.get("steps", 4)  # 4步更快
     guidance_scale = job_input.get("guidance_scale", 1.0)
     seed = job_input.get("seed")
@@ -123,12 +143,17 @@ def handler(job):
         response = requests.get(image_url, timeout=30)
         input_image = Image.open(BytesIO(response.content)).convert("RGB")
         
+        # 计算目标尺寸（与 HF Space 一致）
+        target_h, target_w = calculate_dimensions(input_image)
+        target_h = max(MOD_VALUE, (int(target_h) // MOD_VALUE) * MOD_VALUE)
+        target_w = max(MOD_VALUE, (int(target_w) // MOD_VALUE) * MOD_VALUE)
+        
         # 调整尺寸
-        resized_image = resize_image(input_image)
+        resized_image = input_image.resize((target_w, target_h))
         print(f"图片尺寸: {resized_image.size}")
         
         # 计算帧数
-        num_frames = 1 + int(np.clip(int(round(duration * FIXED_FPS)), MIN_FRAMES_MODEL, MAX_FRAMES_MODEL))
+        num_frames = int(np.clip(int(round(duration * FIXED_FPS)), MIN_FRAMES_MODEL, MAX_FRAMES_MODEL))
         
         # 随机种子
         if seed is None:
@@ -138,17 +163,18 @@ def handler(job):
         print(f"开始生成视频: {prompt[:50]}...")
         from diffusers.utils.export_utils import export_to_video
         
-        output_frames_list = pipe(
-            image=resized_image,
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            height=resized_image.height,
-            width=resized_image.width,
-            num_frames=num_frames,
-            guidance_scale=float(guidance_scale),
-            num_inference_steps=int(steps),
-            generator=torch.Generator(device="cuda").manual_seed(seed),
-        ).frames[0]
+        with torch.inference_mode():
+            output_frames_list = pipe(
+                image=resized_image,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                height=target_h,
+                width=target_w,
+                num_frames=num_frames,
+                guidance_scale=float(guidance_scale),
+                num_inference_steps=int(steps),
+                generator=torch.Generator(device="cuda").manual_seed(seed),
+            ).frames[0]
         
         # 导出视频
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmpfile:

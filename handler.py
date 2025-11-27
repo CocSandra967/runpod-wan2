@@ -35,19 +35,31 @@ def load_model():
     if pipe is not None:
         return pipe
     
-    print("正在加载模型...")
+    import gc
+    
+    print("正在加载模型到 GPU...")
+    print(f"CUDA 可用: {torch.cuda.is_available()}")
+    print(f"GPU 设备: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None'}")
+    
     from diffusers import WanImageToVideoPipeline
     
     HF_TOKEN = os.environ.get("HF_TOKEN")
     
-    # 简化版：直接加载模型，不用 LoRA
+    # 直接加载到 GPU，使用 float16 节省显存
     pipe = WanImageToVideoPipeline.from_pretrained(
         MODEL_ID,
-        torch_dtype=torch.bfloat16,
-        token=HF_TOKEN
+        torch_dtype=torch.float16,  # 改用 float16 节省显存
+        token=HF_TOKEN,
     ).to("cuda")
     
-    print("模型加载完成!")
+    # 启用内存优化
+    pipe.enable_attention_slicing()
+    
+    # 清理 CPU 内存
+    gc.collect()
+    torch.cuda.empty_cache()
+    
+    print(f"模型加载完成! GPU 显存使用: {torch.cuda.memory_allocated()/1024**3:.2f} GB")
     return pipe
 
 
